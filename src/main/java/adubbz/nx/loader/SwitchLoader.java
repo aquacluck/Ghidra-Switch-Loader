@@ -24,9 +24,12 @@ import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.ByteProviderWrapper;
 import ghidra.app.util.opinion.*;
 import ghidra.framework.store.LockException;
+import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressOverflowException;
+import ghidra.program.model.lang.CompilerSpec;
 import ghidra.program.model.lang.CompilerSpecID;
+import ghidra.program.model.lang.Language;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.lang.LanguageID;
 import ghidra.program.model.listing.Program;
@@ -90,8 +93,38 @@ public class SwitchLoader extends BinaryLoader
     }
 
     @Override
-    protected void loadProgramInto(Program program, Loader.ImporterSettings settings) throws IOException, CancelledException
-    {
+    protected List<Loaded<Program>> loadProgram(ImporterSettings settings) throws IOException, CancelledException {
+        LoadSpec loadSpec = settings.loadSpec();
+        
+        LanguageCompilerSpecPair pair = loadSpec.getLanguageCompilerSpec();
+        Language importerLanguage = getLanguageService().getLanguage(pair.languageID);
+        CompilerSpec importerCompilerSpec = importerLanguage.getCompilerSpecByID(pair.compilerSpecID);
+
+        Address baseAddr = importerLanguage.getAddressFactory().getDefaultAddressSpace().getAddress(0);
+        Program prog = createProgram(settings);
+        boolean success = false;
+
+        List<Loaded<Program>> results;
+
+        try 
+        {
+            this.loadInto(prog, settings);
+            success = true;
+            results = List.of(new Loaded<Program>(prog, settings));
+        }
+        finally 
+        {
+            if (!success) 
+            {
+                prog.release(settings);
+            }
+        }
+
+        return results;
+    }
+
+    @Override
+    protected void loadProgramInto(Program program, ImporterSettings settings) throws IOException, CancelledException {
         var space = program.getAddressFactory().getDefaultAddressSpace();
         var provider = settings.provider();
         

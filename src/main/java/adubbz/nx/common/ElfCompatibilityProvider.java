@@ -152,15 +152,61 @@ public class ElfCompatibilityProvider
         if (dynamicTable == null || stringTable == null) 
             return null;
         
+        long nchain;
+        try
+        {
+            if (dynamicTable.containsDynamicValue(ElfDynamicType.DT_HASH))
+            {
+                long dtHashOff = dynamicTable.getDynamicValue(ElfDynamicType.DT_HASH);
+                nchain = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + dtHashOff + 4);
+            }
+            else if (dynamicTable.containsDynamicValue(ElfDynamicType.DT_GNU_HASH))
+            {
+                long dtHashOff = dynamicTable.getDynamicValue(ElfDynamicType.DT_GNU_HASH);
+                long bucketCount = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + dtHashOff + 0);
+                long symOffset = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + dtHashOff + 4);
+                long bloomSize = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + dtHashOff + 8);
+                long bucketOffset = dtHashOff + 0x10 + bloomSize * 8;
+                long maxBucket = 0;
+                for (long i = 0; i < bucketCount; ++i)
+                {
+                    long tmpBucket = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + bucketOffset + i * 4);
+                    maxBucket = Math.max(maxBucket, tmpBucket);
+                }
+
+                if (maxBucket < symOffset)
+                {
+                    nchain = symOffset;
+                }
+                else
+                {
+                    long idx = maxBucket;
+                    while (((this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + bucketOffset + bucketCount * 4 + (idx - symOffset) * 4)) & 1) == 0) { ++idx; }
+                    nchain = idx + 1;
+                }
+            }
+            else
+            {
+                throw new NotFoundException("No DT_HASH or DT_GNU_HASH section present");
+            }
+        }
+        catch (IOException | NotFoundException e)
+        {
+            Msg.error(this, "Failed to determine symbol table size", e);
+            return null;
+        }
+        
         try
         {
             long symbolTableOff = dynamicTable.getDynamicValue(ElfDynamicType.DT_SYMTAB) + this.program.getImageBase().getOffset();
             long symbolEntrySize = dynamicTable.getDynamicValue(ElfDynamicType.DT_SYMENT);
-            long symbolTableSize;
+            /* We need section length in bytes */
+            long symbolTableSize = nchain * symbolEntrySize;
+            Msg.info(this, String.format("Symbol Count: %d, Entry Size: 0x%x", nchain, symbolEntrySize));
             
             if (dynamicTable.containsDynamicValue(ElfDynamicType.DT_HASH)) {
                 long dtHashOff = dynamicTable.getDynamicValue(ElfDynamicType.DT_HASH);
-                long nchain = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + dtHashOff + 4);
+                nchain = this.binaryReader.readUnsignedInt(this.program.getImageBase().getOffset() + dtHashOff + 4);
                 symbolTableSize = nchain * symbolEntrySize;
             }
             else if (symbolTableOff < stringTable.getAddressOffset()) {
