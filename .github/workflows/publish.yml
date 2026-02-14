@@ -8,6 +8,8 @@ on:
         type: string
         required: true
   push:
+    branches:
+    - master
   pull_request:
 
 permissions:
@@ -38,7 +40,7 @@ jobs:
         run: ./gradlew
 
       - uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
+        #if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/SwitchLoader-*.zip
